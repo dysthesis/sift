@@ -19,7 +19,6 @@ name = "Lobste.rs"              # optionally define a display name for the feed;
 tags = ["tech", "programming"]
 ```
 
-
 ## Tags
 
 Tags are used for
@@ -35,13 +34,12 @@ The entries being displayed can be restricted to only a specific set of tags, fo
 sift show --tags programming
 ```
 
-
 ### Scoring
 
 An entry marked as `liked` or `disliked` affects the score of another entry more the more tags they share with the entry. The weight of an entry $x$ with respect to $y$ is given by
 
 $$
-\text{similarity score} \times \sum_{i=0}^{|\text{tags}(x,y)|} \text{tag weight}[i] 
+\text{similarity score} \times \sum_{i=0}^{|\text{tags}(x,y)|} \text{tag weight}[i]
 $$
 
 where

@@ -75,6 +75,7 @@ mod tests {
     }
 
     proptest! {
+        #![proptest_config(ProptestConfig::with_cases(100_000))]
         #[test]
         fn num_docs_matches_len(
             docs: Vec<Vec<Token<'_>>>

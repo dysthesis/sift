@@ -71,6 +71,7 @@ mod tests {
         }
     }
     proptest! {
+        #![proptest_config(ProptestConfig::with_cases(100_000))]
         #[test]
         fn tfidf_preserves_document_count(
             corpus in proptest::collection::vec(proptest::collection::vec(any::<Token>(), 0..50), 0..10)
