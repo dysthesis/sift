@@ -13,5 +13,6 @@ pkgs.mkShell {
     cargo-flamegraph
     cargo-nextest
     gnuplot
+    kani
   ];
 }
