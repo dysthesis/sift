@@ -1,6 +1,6 @@
 pkgs:
 pkgs.mkShell {
-  name = "sim";
+  name = "sift";
   packages = with pkgs; [
     nixd
     alejandra
@@ -11,6 +11,7 @@ pkgs.mkShell {
     rustToolchains.nightly
     bacon
     cargo-flamegraph
+    cargo-nextest
     gnuplot
   ];
 }

@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{borrow::Borrow, collections::HashMap};
 
 use crate::similarity::{Score, token::Token};
 
@@ -26,6 +26,12 @@ where
             },
         );
         Self(tf)
+    }
+}
+
+impl<'a> Tf<'a> {
+    pub fn borrow_map(&self) -> &HashMap<Token<'a>, TfScore> {
+        &self.0
     }
 }
 
