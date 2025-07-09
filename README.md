@@ -53,3 +53,7 @@ name = "programming"
 weight = 2
 
 ```
+
+## Things I might implement
+
+- [ ] Arbitrary scoring mechanism. Instead of hard-coding the scoring logic, expose things like similarity and tags as variables and let users express an entry's score in terms of them. As of right now, I don't see a reason to do that and add the overhead of implmenting a parsing logic, but I might build that if this ever gets enough users.
