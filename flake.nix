@@ -95,7 +95,7 @@
               fileset = lib.fileset.unions [
                 ./Cargo.toml
                 ./Cargo.lock
-                (craneLib.fileset.commonCargoSources ./crates/sift-server)
+                (craneLib.fileset.commonCargoSources ./crates/siftd)
                 (craneLib.fileset.commonCargoSources crate)
               ];
             };
@@ -108,12 +108,12 @@
           # Note that the cargo workspace must define `workspace.members` using wildcards,
           # otherwise, omitting a crate (like we do below) will result in errors since
           # cargo won't be able to find the sources for all members.
-          sift-server = craneLib.buildPackage (
+          siftd = craneLib.buildPackage (
             individualCrateArgs
             // {
-              pname = "sift-server";
-              cargoExtraArgs = "-p sift-server";
-              src = fileSetForCrate ./crates/sift-server;
+              pname = "siftd";
+              cargoExtraArgs = "-p siftd";
+              src = fileSetForCrate ./crates/siftd;
             }
           );
         in {
@@ -126,7 +126,7 @@
           };
           checks = {
             # Build the crates as part of `nix flake check` for convenience
-            inherit sift-server;
+            inherit siftd;
 
             # Run clippy (and deny all warnings) on the workspace source,
             # again, reusing the dependency artifacts from above.
@@ -206,13 +206,13 @@
           };
 
           packages = {
-            inherit sift-server;
+            inherit siftd;
           };
 
           apps = {
-            sift-server = {
+            siftd = {
               type = "app";
-              program = "${sift-server}/bin/sift-server";
+              program = "${siftd}/bin/siftd";
             };
           };
 
