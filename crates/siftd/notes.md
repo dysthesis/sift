@@ -3,7 +3,12 @@
 ![Rough architecture diagram](sift.svg)
 
 - [ ] Bare minimum single-entry fetching, _i.e._, given some URL, and optionally some more metadata, fetch the full content and metadata on that page.
+  - Given a URL, we need to
+    - fetch the raw contents,
+    - determine the content type (plain text, formatted plain text, PDF, etc.), and
+    - parse it accordingly (TODO: What should be the final, normalised format?).
 - [ ] Bare minimum single-feed fetching, _i.e._, given some feed URL, whether Atom or RSS, parse them into entries, which is fetched as per above.
+  - Treat a feed as a producer of URLs, which will be parsed into entries as per above.
 - [ ] Parsers, to parse the full content of an entry into a unified, plain text format (markdown?).
 - [ ] Storage of entries and feeds in a database.
 - [ ] Embedding each entry, and using it as a bare-bones 'score'.
