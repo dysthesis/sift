@@ -5,7 +5,7 @@ use crate::{entry::Entry, parser::html::HtmlParser};
 
 mod html;
 
-pub trait Parser<'a> {
+pub trait Parser<'a>: Send {
     fn new(bytes: &Bytes, headers: &'a reqwest::header::HeaderMap, url: &Url) -> Option<Box<Self>>
     where
         Self: Sized;

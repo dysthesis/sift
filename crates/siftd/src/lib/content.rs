@@ -2,39 +2,33 @@ use std::marker::PhantomData;
 
 use bytes::Bytes;
 use thiserror::Error;
+use tracing::info;
 use url::Url;
 
-use crate::{
-    entry::Entry,
-    metadata::Metadata,
-    parser::{identify, Parser},
-    HTTP_CLIENT,
-};
+use crate::{entry::Entry, metadata::Metadata, parser::identify, HTTP_CLIENT};
 
 pub trait ContentState {}
-pub struct Content<'a, S>
+pub struct Content<S>
 where
     S: ContentState,
 {
     url: Url,
     bytes: Option<Bytes>,
     headers: Option<reqwest::header::HeaderMap>,
-    parser: Option<Box<dyn Parser<'a> + 'a>>,
     metadata: Metadata,
     _state: PhantomData<S>,
 }
 
-impl<'a, S> Content<'a, S>
+impl<S> Content<S>
 where
     S: ContentState,
 {
-    pub fn new(url: Url, metadata: Option<Metadata>) -> Content<'a, Unfetched> {
+    pub fn new(url: Url, metadata: Option<Metadata>) -> Content<Unfetched> {
         let metadata = metadata.unwrap_or_default();
         Content {
             url,
             bytes: None,
             headers: None,
-            parser: None,
             metadata,
             _state: PhantomData::<Unfetched>,
         }
@@ -51,8 +45,8 @@ pub enum ContentError {
 
 pub struct Unfetched;
 impl ContentState for Unfetched {}
-impl<'a> Content<'a, Unfetched> {
-    pub async fn fetch(self) -> Result<Content<'a, Fetched>, ContentError> {
+impl Content<Unfetched> {
+    pub async fn fetch(self) -> Result<Content<Fetched>, ContentError> {
         let raw_response = HTTP_CLIENT
             .get(self.url.as_str())
             .send()
@@ -73,11 +67,8 @@ impl<'a> Content<'a, Unfetched> {
                 url: self.url.to_string(),
             })?;
 
-        // let parser = identify(&bytes, &headers);
-
         let Content {
             url,
-            parser,
             metadata,
             _state: _,
             bytes: _,
@@ -89,7 +80,6 @@ impl<'a> Content<'a, Unfetched> {
             bytes: Some(bytes),
             _state: PhantomData::<Fetched>,
             url,
-            parser,
             metadata,
         })
     }
@@ -97,14 +87,31 @@ impl<'a> Content<'a, Unfetched> {
 
 pub struct Fetched;
 impl ContentState for Fetched {}
-impl<'a> Content<'a, Fetched> {
+impl Content<Fetched> {
     pub fn parse(self) -> Result<Entry, ContentError> {
-        let entry = self
-            .parser
+        let bytes = self
+            .bytes
+            .as_ref()
             .ok_or_else(|| ContentError::ParseError {
                 url: self.url.to_string(),
-            })?
-            .parse();
-        Ok(entry)
+            })?;
+        info!("Parsed bytes: {}", str::from_utf8(bytes).unwrap());
+
+        let headers = self
+            .headers
+            .as_ref()
+            .ok_or_else(|| ContentError::ParseError {
+                url: self.url.to_string(),
+            })?;
+        info!("Parsed headers: {headers:?}");
+
+        if let Some(parser) = identify(bytes, headers, &self.url) {
+            let entry = parser.parse();
+            Ok(entry)
+        } else {
+            Err(ContentError::ParseError {
+                url: self.url.to_string(),
+            })
+        }
     }
 }

@@ -1,5 +1,6 @@
 use bytes::Bytes;
 use scraper::{Html, Selector};
+use tracing::warn;
 use url::Url;
 
 use crate::{
@@ -7,29 +8,25 @@ use crate::{
     parser::{Parser, ParserFamily},
 };
 
-pub struct HtmlParser<'a> {
+pub struct HtmlParser {
     url: Url,
-    headers: &'a reqwest::header::HeaderMap,
     content: String,
 }
-impl<'a> Parser<'a> for HtmlParser<'a> {
+impl<'a> Parser<'a> for HtmlParser {
     fn new(bytes: &Bytes, headers: &'a reqwest::header::HeaderMap, url: &Url) -> Option<Box<Self>>
     where
         Self: Sized,
     {
         if let Some(content_type) = headers.get(reqwest::header::CONTENT_TYPE)
             && let Ok(content_type) = content_type.to_str()
-            && content_type == "text/html"
+            && content_type.contains("text/html")
             && let Ok(text) = str::from_utf8(bytes)
         {
             let content = text.to_string();
             let url = url.clone();
-            Some(Box::new(Self {
-                url,
-                headers,
-                content,
-            }))
+            Some(Box::new(Self { url, content }))
         } else {
+            warn!("Is not HTML.");
             None
         }
     }
@@ -57,6 +54,7 @@ impl<'a> Parser<'a> for HtmlParser<'a> {
             .and_then(|m| m.value().attr("content"))
             .map(str::to_owned)
             .or_else(|| {
+                warn!("Can't find og:title, falling back...");
                 doc.select(&selector_title)
                     .next()
                     .map(|n| n.text().collect::<String>().trim().to_owned())
@@ -68,7 +66,10 @@ impl<'a> Parser<'a> for HtmlParser<'a> {
             .next()
             .and_then(|m| m.value().attr("content"))
             .map(str::to_owned)
-            .or_else(|| url.host_str().map(|h| h.to_string()))
+            .or_else(|| {
+                warn!("Can't find origin title, falling back...");
+                url.host_str().map(|h| h.to_string())
+            })
             .unwrap_or_default();
 
         let author = doc
@@ -76,13 +77,16 @@ impl<'a> Parser<'a> for HtmlParser<'a> {
             .filter_map(|m| m.value().attr("content"))
             .map(str::trim)
             .find(|s| !s.is_empty())
-            .unwrap_or("")
+            .unwrap_or_else(|| {
+                warn!("Can't find author, falling back...");
+                ""
+            })
             .to_owned();
 
         Entry::new(title, origin, author, url, self.content.clone(), None)
     }
 }
 
-impl ParserFamily for HtmlParser<'_> {
-    type For<'a> = HtmlParser<'a>;
+impl ParserFamily for HtmlParser {
+    type For<'a> = HtmlParser;
 }
