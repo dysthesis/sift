@@ -2,7 +2,7 @@ use std::marker::PhantomData;
 
 use url::Url;
 
-use crate::{entry::Entry, parser::Parser};
+use crate::{entry::Entry, metadata::Metadata, parser::Parser};
 
 type Byte = u8;
 
@@ -14,6 +14,7 @@ where
     url: Url,
     raw_bytes: Option<Vec<Byte>>,
     parser: Option<Box<dyn Parser>>,
+    metadata: Metadata,
     _state: PhantomData<S>,
 }
 
@@ -21,11 +22,13 @@ impl<S> Content<S>
 where
     S: ContentState,
 {
-    pub fn new(url: Url) -> Content<Unfetched> {
+    pub fn new(url: Url, metadata: Option<Metadata>) -> Content<Unfetched> {
+        let metadata = metadata.unwrap_or_default();
         Content {
             url,
             raw_bytes: None,
             parser: None,
+            metadata,
             _state: PhantomData::<Unfetched>,
         }
     }
