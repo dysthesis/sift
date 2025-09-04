@@ -2,7 +2,7 @@ use std::marker::PhantomData;
 
 use url::Url;
 
-use crate::parser::Parser;
+use crate::{entry::Entry, parser::Parser};
 
 type Byte = u8;
 
@@ -42,7 +42,7 @@ impl Content<Unfetched> {
 pub struct Raw;
 impl ContentState for Raw {}
 impl Content<Raw> {
-    pub fn identify(&self) {
+    pub fn identify(&self) -> Content<Identified> {
         todo!("Implement identifying content type")
     }
 }
@@ -50,7 +50,7 @@ impl Content<Raw> {
 pub struct Identified;
 impl ContentState for Identified {}
 impl Content<Identified> {
-    pub fn parse(&self) {
+    pub fn parse(&self) -> Entry {
         todo!("Implement parsing")
     }
 }
