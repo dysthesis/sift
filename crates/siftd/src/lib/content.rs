@@ -1,32 +1,39 @@
 use std::marker::PhantomData;
 
+use bytes::Bytes;
+use thiserror::Error;
 use url::Url;
 
-use crate::{entry::Entry, metadata::Metadata, parser::Parser};
-
-type Byte = u8;
+use crate::{
+    entry::Entry,
+    metadata::Metadata,
+    parser::{identify, Parser},
+    HTTP_CLIENT,
+};
 
 pub trait ContentState {}
-pub struct Content<S>
+pub struct Content<'a, S>
 where
     S: ContentState,
 {
     url: Url,
-    raw_bytes: Option<Vec<Byte>>,
-    parser: Option<Box<dyn Parser>>,
+    bytes: Option<Bytes>,
+    headers: Option<reqwest::header::HeaderMap>,
+    parser: Option<Box<dyn Parser<'a> + 'a>>,
     metadata: Metadata,
     _state: PhantomData<S>,
 }
 
-impl<S> Content<S>
+impl<'a, S> Content<'a, S>
 where
     S: ContentState,
 {
-    pub fn new(url: Url, metadata: Option<Metadata>) -> Content<Unfetched> {
+    pub fn new(url: Url, metadata: Option<Metadata>) -> Content<'a, Unfetched> {
         let metadata = metadata.unwrap_or_default();
         Content {
             url,
-            raw_bytes: None,
+            bytes: None,
+            headers: None,
             parser: None,
             metadata,
             _state: PhantomData::<Unfetched>,
@@ -34,26 +41,70 @@ where
     }
 }
 
+#[derive(Debug, Error)]
+pub enum ContentError {
+    #[error("Failed to fetch URL {url}: {error}")]
+    FetchError { error: reqwest::Error, url: String },
+    #[error("Failed to parse body. URL: {url}")]
+    ParseError { url: String },
+}
+
 pub struct Unfetched;
 impl ContentState for Unfetched {}
-impl Content<Unfetched> {
-    pub fn fetch(&self) -> Content<Raw> {
-        todo!("Implement fetching raw bytes")
+impl<'a> Content<'a, Unfetched> {
+    pub async fn fetch(self) -> Result<Content<'a, Fetched>, ContentError> {
+        let raw_response = HTTP_CLIENT
+            .get(self.url.as_str())
+            .send()
+            .await
+            .map_err(|error| ContentError::FetchError {
+                error,
+                url: self.url.to_string(),
+            })?;
+
+        // TODO: Can this be destructured instead to prevent cloning?
+        let headers = raw_response.headers().clone();
+
+        let bytes = raw_response
+            .bytes()
+            .await
+            .map_err(|error| ContentError::FetchError {
+                error,
+                url: self.url.to_string(),
+            })?;
+
+        // let parser = identify(&bytes, &headers);
+
+        let Content {
+            url,
+            parser,
+            metadata,
+            _state: _,
+            bytes: _,
+            headers: _,
+        } = self;
+
+        Ok(Content {
+            headers: Some(headers),
+            bytes: Some(bytes),
+            _state: PhantomData::<Fetched>,
+            url,
+            parser,
+            metadata,
+        })
     }
 }
 
-pub struct Raw;
-impl ContentState for Raw {}
-impl Content<Raw> {
-    pub fn identify(&self) -> Content<Identified> {
-        todo!("Implement identifying content type")
-    }
-}
-
-pub struct Identified;
-impl ContentState for Identified {}
-impl Content<Identified> {
-    pub fn parse(&self) -> Entry {
-        todo!("Implement parsing")
+pub struct Fetched;
+impl ContentState for Fetched {}
+impl<'a> Content<'a, Fetched> {
+    pub fn parse(self) -> Result<Entry, ContentError> {
+        let entry = self
+            .parser
+            .ok_or_else(|| ContentError::ParseError {
+                url: self.url.to_string(),
+            })?
+            .parse();
+        Ok(entry)
     }
 }
