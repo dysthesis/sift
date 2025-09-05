@@ -2,7 +2,7 @@
 
 ![Rough architecture diagram](sift.svg)
 
-- [ ] Bare minimum single-entry fetching, _i.e._, given some URL, and optionally some more metadata, fetch the full content and metadata on that page.
+- [x] Bare minimum single-entry fetching, _i.e._, given some URL, and optionally some more metadata, fetch the full content and metadata on that page.
   - Given a URL, we need to
     - fetch the raw contents,
     - determine the content type (plain text, formatted plain text, PDF, etc.), and
