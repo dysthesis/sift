@@ -1,6 +1,6 @@
 use axum::{http::StatusCode, Json};
 use serde::Deserialize;
-use tracing::info;
+use tracing::{error, info};
 use url::Url;
 
 use crate::{
@@ -8,18 +8,23 @@ use crate::{
     entry::Entry,
 };
 
-pub async fn handle_url(Json(payload): Json<HandleUrl>) -> (StatusCode, Json<Entry>) {
+pub async fn handle_url(Json(payload): Json<HandleUrl>) -> Result<(StatusCode, Json<Entry>), (StatusCode, String)> {
     let url = payload.url;
     info!("Fetching URL {url}");
     let content = Content::<Unfetched>::new(url, None);
     let entry = content
         .fetch()
         .await
-        .expect("Fetching to work")
+        .map_err(|e| {
+            error!("fetch error: {e}");
+            (StatusCode::BAD_GATEWAY, format!("fetch error: {e}"))
+        })?
         .parse()
-        .inspect_err(|e| eprint!("Error: {e}"))
-        .expect("Parsing to work");
-    (StatusCode::CREATED, Json(entry))
+        .map_err(|e| {
+            error!("parse error: {e}");
+            (StatusCode::UNPROCESSABLE_ENTITY, format!("parse error: {e}"))
+        })?;
+    Ok((StatusCode::CREATED, Json(entry)))
 }
 
 #[derive(Deserialize, Debug)]

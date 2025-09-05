@@ -2,7 +2,7 @@ use std::marker::PhantomData;
 
 use bytes::Bytes;
 use thiserror::Error;
-use tracing::info;
+use tracing::{debug, info};
 use url::Url;
 
 use crate::{entry::Entry, metadata::Metadata, parser::identify, HTTP_CLIENT};
@@ -40,7 +40,7 @@ pub enum ContentError {
     #[error("Failed to fetch URL {url}: {error}")]
     FetchError { error: reqwest::Error, url: String },
     #[error("Failed to parse body. URL: {url}")]
-    ParseError { url: String },
+    ParseError { url: String, #[source] source: anyhow::Error },
 }
 
 pub struct Unfetched;
@@ -94,23 +94,29 @@ impl Content<Fetched> {
             .as_ref()
             .ok_or_else(|| ContentError::ParseError {
                 url: self.url.to_string(),
+                source: anyhow::anyhow!("missing bytes"),
             })?;
-        info!("Parsed bytes: {}", str::from_utf8(bytes).unwrap());
+        info!("Parsed bytes length: {}", bytes.len());
 
         let headers = self
             .headers
             .as_ref()
             .ok_or_else(|| ContentError::ParseError {
                 url: self.url.to_string(),
+                source: anyhow::anyhow!("missing headers"),
             })?;
-        info!("Parsed headers: {headers:?}");
+        debug!("Parsed headers present: {}", !headers.is_empty());
 
         if let Some(parser) = identify(bytes, headers, &self.url) {
-            let entry = parser.parse();
+            let entry = parser.parse().map_err(|e| ContentError::ParseError {
+                url: self.url.to_string(),
+                source: anyhow::Error::from(e),
+            })?;
             Ok(entry)
         } else {
             Err(ContentError::ParseError {
                 url: self.url.to_string(),
+                source: anyhow::anyhow!("no suitable parser"),
             })
         }
     }

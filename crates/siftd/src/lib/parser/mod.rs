@@ -1,4 +1,5 @@
 use bytes::Bytes;
+use thiserror::Error;
 use url::Url;
 
 use crate::{entry::Entry, parser::html::HtmlParser};
@@ -9,7 +10,7 @@ pub trait Parser<'a>: Send {
     fn new(bytes: &Bytes, headers: &'a reqwest::header::HeaderMap, url: &Url) -> Option<Box<Self>>
     where
         Self: Sized;
-    fn parse(&self) -> Entry;
+    fn parse(&self) -> Result<Entry, ParserError>;
 }
 
 type ParserFn = for<'a> fn(
@@ -46,4 +47,18 @@ pub fn identify<'a>(
     url: &'a Url,
 ) -> Option<Box<dyn Parser<'a> + 'a>> {
     PARSERS.iter().find_map(|f| f(bytes, header, url))
+}
+
+#[derive(Debug, Error)]
+pub enum ParserError {
+    #[error("HTML decode failed (charset={charset:?})")]
+    Decode {
+        charset: Option<String>,
+        #[source]
+        source: anyhow::Error,
+    },
+    #[error("Parsing HTML failed")]
+    WebpageParse(#[source] anyhow::Error),
+    #[error("Field extraction failed: {0}")]
+    Extraction(String),
 }
