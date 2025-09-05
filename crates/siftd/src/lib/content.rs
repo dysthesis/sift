@@ -40,7 +40,11 @@ pub enum ContentError {
     #[error("Failed to fetch URL {url}: {error}")]
     FetchError { error: reqwest::Error, url: String },
     #[error("Failed to parse body. URL: {url}")]
-    ParseError { url: String, #[source] source: anyhow::Error },
+    ParseError {
+        url: String,
+        #[source]
+        source: anyhow::Error,
+    },
 }
 
 pub struct Unfetched;
@@ -49,8 +53,8 @@ impl Content<Unfetched> {
     #[instrument(level = "info", skip(self), fields(url_host, url_path))]
     pub async fn fetch(self) -> Result<Content<Fetched>, ContentError> {
         let (host, path) = crate::url_host_and_path(&self.url);
-        tracing::Span::current().record("url_host", &tracing::field::display(&host));
-        tracing::Span::current().record("url_path", &tracing::field::display(&path));
+        tracing::Span::current().record("url_host", tracing::field::display(&host));
+        tracing::Span::current().record("url_path", tracing::field::display(&path));
         info!(%host, %path, "fetch start");
         let raw_response = HTTP_CLIENT
             .get(self.url.as_str())
@@ -96,8 +100,8 @@ impl Content<Fetched> {
     #[instrument(level = "info", skip(self), fields(url_host, url_path))]
     pub fn parse(self) -> Result<Entry, ContentError> {
         let (host, path) = crate::url_host_and_path(&self.url);
-        tracing::Span::current().record("url_host", &tracing::field::display(&host));
-        tracing::Span::current().record("url_path", &tracing::field::display(&path));
+        tracing::Span::current().record("url_host", tracing::field::display(&host));
+        tracing::Span::current().record("url_path", tracing::field::display(&path));
         let bytes = self
             .bytes
             .as_ref()

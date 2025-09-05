@@ -1,14 +1,8 @@
-use std::{
-    io::IsTerminal as _,
-    path::Path,
-};
+use std::{io::IsTerminal as _, path::Path};
 
-use axum::{
-    Router,
-    routing::post,
-};
+use axum::{routing::post, Router};
 use clap::Parser;
-use color_eyre::{Result, eyre::eyre};
+use color_eyre::{eyre::eyre, Result};
 use libsift::handler::url::handle_url;
 use tower_http::{
     request_id::{MakeRequestUuid, PropagateRequestIdLayer, SetRequestIdLayer},
@@ -17,12 +11,7 @@ use tower_http::{
 use tracing::{info, Level};
 use tracing_error::ErrorLayer;
 use tracing_log::LogTracer;
-use tracing_subscriber::{
-    fmt,
-    layer::SubscriberExt,
-    util::SubscriberInitExt,
-    EnvFilter,
-};
+use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
 use crate::cli::{Cli, ColorChoice, LogFormat, LogLevel};
 
@@ -73,7 +62,7 @@ async fn main() -> Result<()> {
                     url_qs = field::Empty,
                 );
                 if include_queries {
-                    span.record("url_qs", &field::display(query.unwrap_or("")));
+                    span.record("url_qs", field::display(query.unwrap_or("")));
                 }
                 span
             })
@@ -113,8 +102,8 @@ fn init_tracing(cli: &Cli) -> Result<()> {
             (false, Some(LogLevel::Trace), _) => "trace",
             // -v mapping
             (false, None, v) if v >= 3 => "trace",
-            (false, None, v) if v == 2 => "debug",
-            (false, None, v) if v == 1 => "info",
+            (false, None, 2) => "debug",
+            (false, None, 1) => "info",
             _ => "info",
         };
         let s = format!(
@@ -145,24 +134,39 @@ fn init_tracing(cli: &Cli) -> Result<()> {
         LogFormat::Pretty | LogFormat::Compact => false,
         LogFormat::Auto => {
             // If writing to file or not a TTY, default to JSON
-            if cli.log_file.is_some() { true } else { !std::io::stderr().is_terminal() }
+            if cli.log_file.is_some() {
+                true
+            } else {
+                !std::io::stderr().is_terminal()
+            }
         }
     };
-    static LOG_GUARD: once_cell::sync::OnceCell<tracing_appender::non_blocking::WorkerGuard> = once_cell::sync::OnceCell::new();
+    static LOG_GUARD: once_cell::sync::OnceCell<tracing_appender::non_blocking::WorkerGuard> =
+        once_cell::sync::OnceCell::new();
     if use_json {
         if let Some(ref path) = cli.log_file {
             let (non_blocking, guard) = non_blocking_file(path);
             let _ = LOG_GUARD.set(guard);
             tracing_subscriber::registry()
                 .with(env_filter)
-                .with(fmt::layer().event_format(fmt::format().json().flatten_event(true)).with_ansi(false).with_writer(non_blocking))
+                .with(
+                    fmt::layer()
+                        .event_format(fmt::format().json().flatten_event(true))
+                        .with_ansi(false)
+                        .with_writer(non_blocking),
+                )
                 .with(ErrorLayer::default())
                 .try_init()
                 .ok();
         } else {
             tracing_subscriber::registry()
                 .with(env_filter)
-                .with(fmt::layer().event_format(fmt::format().json().flatten_event(true)).with_ansi(false).with_writer(std::io::stderr))
+                .with(
+                    fmt::layer()
+                        .event_format(fmt::format().json().flatten_event(true))
+                        .with_ansi(false)
+                        .with_writer(std::io::stderr),
+                )
                 .with(ErrorLayer::default())
                 .try_init()
                 .ok();
@@ -174,7 +178,12 @@ fn init_tracing(cli: &Cli) -> Result<()> {
                 let _ = LOG_GUARD.set(guard);
                 tracing_subscriber::registry()
                     .with(env_filter)
-                    .with(fmt::layer().pretty().with_ansi(ansi).with_writer(non_blocking))
+                    .with(
+                        fmt::layer()
+                            .pretty()
+                            .with_ansi(ansi)
+                            .with_writer(non_blocking),
+                    )
                     .with(ErrorLayer::default())
                     .try_init()
                     .ok();
@@ -184,7 +193,12 @@ fn init_tracing(cli: &Cli) -> Result<()> {
                 let _ = LOG_GUARD.set(guard);
                 tracing_subscriber::registry()
                     .with(env_filter)
-                    .with(fmt::layer().compact().with_ansi(ansi).with_writer(non_blocking))
+                    .with(
+                        fmt::layer()
+                            .compact()
+                            .with_ansi(ansi)
+                            .with_writer(non_blocking),
+                    )
                     .with(ErrorLayer::default())
                     .try_init()
                     .ok();
@@ -192,7 +206,12 @@ fn init_tracing(cli: &Cli) -> Result<()> {
             (LogFormat::Pretty | LogFormat::Auto, None) => {
                 tracing_subscriber::registry()
                     .with(env_filter)
-                    .with(fmt::layer().pretty().with_ansi(ansi).with_writer(std::io::stderr))
+                    .with(
+                        fmt::layer()
+                            .pretty()
+                            .with_ansi(ansi)
+                            .with_writer(std::io::stderr),
+                    )
                     .with(ErrorLayer::default())
                     .try_init()
                     .ok();
@@ -200,7 +219,12 @@ fn init_tracing(cli: &Cli) -> Result<()> {
             (LogFormat::Compact, None) => {
                 tracing_subscriber::registry()
                     .with(env_filter)
-                    .with(fmt::layer().compact().with_ansi(ansi).with_writer(std::io::stderr))
+                    .with(
+                        fmt::layer()
+                            .compact()
+                            .with_ansi(ansi)
+                            .with_writer(std::io::stderr),
+                    )
                     .with(ErrorLayer::default())
                     .try_init()
                     .ok();
@@ -211,7 +235,9 @@ fn init_tracing(cli: &Cli) -> Result<()> {
     Ok(())
 }
 
-fn non_blocking_file(path: &Path) -> (
+fn non_blocking_file(
+    path: &Path,
+) -> (
     tracing_appender::non_blocking::NonBlocking,
     tracing_appender::non_blocking::WorkerGuard,
 ) {
