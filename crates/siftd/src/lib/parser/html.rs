@@ -97,7 +97,14 @@ impl<'a> Parser<'a> for HtmlParser {
         let url = self.url.clone();
         let content_capped = cap_len(content, 400_000);
 
-        let metadata = Some(Metadata::new(summary, published_time, updated_time));
+        let thumbnail_url = pick_thumbnail(&html, &document, &self.url);
+
+        let metadata = Some(Metadata::new(
+            summary,
+            published_time,
+            updated_time,
+            thumbnail_url,
+        ));
 
         Ok(Entry::new(
             title,
@@ -361,5 +368,148 @@ fn cap_len(s: String, max: usize) -> String {
             end -= 1;
         }
         format!("{}…", &s[..end])
+    }
+}
+
+/// Best-effort thumbnail URL selection. Returns an absolute URL if any viable candidate is found.
+fn pick_thumbnail(html: &HTML, doc: &scraper::Html, page_url: &Url) -> Option<Url> {
+    let mut og_candidates: Vec<(String, u64)> = html
+        .opengraph
+        .images
+        .iter()
+        .filter_map(|obj| {
+            // Properties may include "secure_url", "width", "height", "type" (keys have no "og:" prefix)
+            let url = obj
+                .properties
+                .get("secure_url")
+                .cloned()
+                .unwrap_or_else(|| obj.url.clone());
+            let w = obj
+                .properties
+                .get("width")
+                .and_then(|s| s.parse::<u64>().ok())
+                .unwrap_or(0);
+            let h = obj
+                .properties
+                .get("height")
+                .and_then(|s| s.parse::<u64>().ok())
+                .unwrap_or(0);
+            let area = w.saturating_mul(h);
+            (!url.trim().is_empty()).then_some((url, area))
+        })
+        .collect();
+
+    og_candidates.sort_by_key(|(_, area)| std::cmp::Reverse(*area));
+    for (u, _) in og_candidates {
+        if let Some(abs) = absolutise(&u, page_url) {
+            return Some(abs);
+        }
+    }
+
+    // Twitter Card
+    for key in ["twitter:image", "twitter:image:src"] {
+        if let Some(u) = html.meta.get(key)
+            && let Some(abs) = absolutise(u, page_url)
+        {
+            return Some(abs);
+        }
+    }
+
+    // Schema.org JSON-LD (`image` can be string or object or array)
+    for s in &html.schema_org {
+        if let Some(abs) = image_from_schema(&s.value).and_then(|u| absolutise(&u, page_url)) {
+            return Some(abs);
+        }
+    }
+
+    // Icons via DOM fallback Prefer largest `sizes=`; then any `href`.
+    let link_sel = |q: &str| scraper::Selector::parse(q).ok();
+    let mut icon_nodes: Vec<scraper::element_ref::ElementRef> = Vec::new();
+    if let Some(sel) = link_sel(r#"link[rel~="apple-touch-icon"]"#) {
+        icon_nodes.extend(doc.select(&sel));
+    }
+    if let Some(sel) = link_sel(r#"link[rel~="icon"], link[rel~="shortcut icon"]"#) {
+        icon_nodes.extend(doc.select(&sel));
+    }
+    // Rank by declared size (area), then by filename hint
+    icon_nodes.sort_by_key(|el| {
+        let sizes = el.value().attr("sizes").unwrap_or("");
+        let area = parse_sizes_area(sizes).unwrap_or(0);
+        let href = el.value().attr("href").unwrap_or("");
+        (std::cmp::Reverse(area), score_filename(href))
+    });
+    for el in icon_nodes {
+        if let Some(href) = el.value().attr("href")
+            && let Some(abs) = absolutise(href, page_url)
+        {
+            return Some(abs);
+        }
+    }
+
+    None
+}
+
+fn absolutise(raw: &str, base: &Url) -> Option<Url> {
+    let s = raw.trim();
+    if s.is_empty() {
+        return None;
+    }
+    if let Ok(u) = Url::parse(s) {
+        return Some(u);
+    }
+    // Protocol-relative
+    if let Some(stripped) = s.strip_prefix("//") {
+        let mut u = base.clone();
+        u.set_path("");
+        u.set_query(None);
+        u.set_fragment(None);
+        return Url::parse(&format!("{}://{}", u.scheme(), stripped)).ok();
+    }
+    base.join(s).ok()
+}
+
+fn parse_sizes_area(sizes: &str) -> Option<u64> {
+    // e.g. "180x180" or "32x32 16x16"
+    sizes
+        .split_whitespace()
+        .filter_map(|tok| {
+            let (w, h) = tok.split_once('x')?;
+            Some((w.parse::<u64>().ok()?, h.parse::<u64>().ok()?))
+        })
+        .map(|(w, h)| w.saturating_mul(h))
+        .max()
+}
+
+fn score_filename(href: &str) -> i32 {
+    // Negative = better. Encourage common large touch icon sizes.
+    let h = href.to_ascii_lowercase();
+    match () {
+        _ if h.contains("512") => -3,
+        _ if h.contains("192") => -2,
+        _ if h.contains("180") => -2,
+        _ if h.contains("favicon") => -1,
+        _ => 0,
+    }
+}
+
+fn image_from_schema(v: &serde_json::Value) -> Option<String> {
+    use serde_json::Value::*;
+    match v.get("image")? {
+        String(s) => Some(s.clone()),
+        Object(m) => m
+            .get("contentUrl")
+            .or_else(|| m.get("url"))
+            .and_then(|x| x.as_str())
+            .map(str::to_owned),
+        Array(xs) => xs.iter().find_map(|x| {
+            if let Some(s) = x.as_str() {
+                return Some(s.to_owned());
+            }
+            x.get("contentUrl")
+                .or_else(|| x.get("url"))
+                .and_then(|y| y.as_str())
+                .map(str::to_owned)
+        }),
+        _ => None,
     }
 }
