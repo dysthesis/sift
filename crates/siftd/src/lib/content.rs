@@ -2,7 +2,7 @@ use std::marker::PhantomData;
 
 use bytes::Bytes;
 use thiserror::Error;
-use tracing::{debug, info};
+use tracing::{debug, info, instrument};
 use url::Url;
 
 use crate::{entry::Entry, metadata::Metadata, parser::identify, HTTP_CLIENT};
@@ -46,7 +46,12 @@ pub enum ContentError {
 pub struct Unfetched;
 impl ContentState for Unfetched {}
 impl Content<Unfetched> {
+    #[instrument(level = "info", skip(self), fields(url_host, url_path))]
     pub async fn fetch(self) -> Result<Content<Fetched>, ContentError> {
+        let (host, path) = crate::url_host_and_path(&self.url);
+        tracing::Span::current().record("url_host", &tracing::field::display(&host));
+        tracing::Span::current().record("url_path", &tracing::field::display(&path));
+        info!(%host, %path, "fetch start");
         let raw_response = HTTP_CLIENT
             .get(self.url.as_str())
             .send()
@@ -88,7 +93,11 @@ impl Content<Unfetched> {
 pub struct Fetched;
 impl ContentState for Fetched {}
 impl Content<Fetched> {
+    #[instrument(level = "info", skip(self), fields(url_host, url_path))]
     pub fn parse(self) -> Result<Entry, ContentError> {
+        let (host, path) = crate::url_host_and_path(&self.url);
+        tracing::Span::current().record("url_host", &tracing::field::display(&host));
+        tracing::Span::current().record("url_path", &tracing::field::display(&path));
         let bytes = self
             .bytes
             .as_ref()
@@ -96,7 +105,7 @@ impl Content<Fetched> {
                 url: self.url.to_string(),
                 source: anyhow::anyhow!("missing bytes"),
             })?;
-        info!("Parsed bytes length: {}", bytes.len());
+        debug!(bytes_len = bytes.len());
 
         let headers = self
             .headers
@@ -105,7 +114,7 @@ impl Content<Fetched> {
                 url: self.url.to_string(),
                 source: anyhow::anyhow!("missing headers"),
             })?;
-        debug!("Parsed headers present: {}", !headers.is_empty());
+        debug!(headers_present = !headers.is_empty());
 
         if let Some(parser) = identify(bytes, headers, &self.url) {
             let entry = parser.parse().map_err(|e| ContentError::ParseError {

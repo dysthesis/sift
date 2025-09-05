@@ -1,7 +1,7 @@
 use bytes::Bytes;
 use mime::Mime;
 use serde_json::Value;
-use tracing::{debug, info};
+use tracing::debug;
 use url::Url;
 use webpage::HTML;
 
@@ -46,7 +46,8 @@ impl<'a> Parser<'a> for HtmlParser {
     }
 
     fn parse(&self) -> Result<crate::entry::Entry, ParserError> {
-        info!("Parsing {} as HTML...", self.url);
+        let (url_host, url_path) = crate::url_host_and_path(&self.url);
+        debug!(parser = "html", %url_host, %url_path, "parse");
 
         // Decode to UTF-8 String. Prefer header charset if present; otherwise fall back to lossy UTF-8.
         let decoded = match charset_from_mime(self.content_type.as_ref()) {
@@ -54,7 +55,7 @@ impl<'a> Parser<'a> for HtmlParser {
             None => String::from_utf8_lossy(&self.bytes).into_owned(),
         };
 
-        debug!("Decoded HTML length: {} bytes", decoded.len());
+        debug!(decoded_len = decoded.len());
 
         let html = HTML::from_string(decoded.clone(), Some(self.url.to_string()))
             .map_err(|e| ParserError::WebpageParse(anyhow::Error::new(e)))?;
@@ -63,11 +64,7 @@ impl<'a> Parser<'a> for HtmlParser {
         let document = scraper::Html::parse_document(&decoded);
 
         let title = pick_title(&html, &document);
-        debug!(
-            "Title chosen (len={}): {}",
-            title.len(),
-            truncate_for_log(&title)
-        );
+        debug!(title_len = title.len(), preview = %truncate_for_log(&title), "title chosen");
 
         let mut summary = html
             .opengraph
