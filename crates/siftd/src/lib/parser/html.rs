@@ -246,17 +246,18 @@ fn pick_author(html: &HTML) -> Option<String> {
         return meta_candidate.map(|s| s.trim().to_string());
     }
 
+    // Note: `webpage` only flattens <meta> tags present in <head> into `html.meta`.
+    // If sites place author meta in <body> (or inject it client-side), it will be ignored by design.
+    debug!(
+        "Author not found in <head> meta (author/article:author/etc.); relying on JSON-LD or DOM heuristics."
+    );
+
     if let Some(from_schema) = html
         .schema_org
         .iter()
         .find_map(|s| author_from_schema(&s.value))
     {
         return Some(from_schema.trim().to_string());
-    }
-
-    // OpenGraph article:author can be present in opengraph properties
-    if let Some(a) = html.opengraph.properties.get("article:author").cloned() {
-        return Some(a.trim().to_string());
     }
 
     None
@@ -289,18 +290,20 @@ fn extract_times(
     let mut published: Option<DateTime<Utc>> = None;
     let mut updated: Option<DateTime<Utc>> = None;
 
-    // OpenGraph
-    if let Some(v) = html.opengraph.properties.get("article:published_time")
+    // Open Graph extension (article:*) live in html.meta (flattened from <head>)
+    if let Some(v) = html.meta.get("article:published_time")
         && let Some(dt) = parse_time(v)
     {
         published = Some(dt);
     }
-    if let Some(v) = html.opengraph.properties.get("article:modified_time")
+    if let Some(v) = html.meta.get("article:modified_time")
         && let Some(dt) = parse_time(v)
     {
         updated = Some(dt);
     }
-    if let Some(v) = html.opengraph.properties.get("updated_time")
+    // Core OG still lives in opengraph map with stripped key ("og:updated_time" to "updated_time")
+    if updated.is_none()
+        && let Some(v) = html.opengraph.properties.get("updated_time")
         && let Some(dt) = parse_time(v)
     {
         updated = Some(dt);
