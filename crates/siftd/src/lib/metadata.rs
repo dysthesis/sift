@@ -13,3 +13,17 @@ pub struct Metadata {
     #[serde(skip_serializing_if = "Option::is_none")]
     updated_time: Option<Time>,
 }
+
+impl Metadata {
+    pub fn new(
+        summary: Option<String>,
+        published_time: Option<Time>,
+        updated_time: Option<Time>,
+    ) -> Self {
+        Self {
+            summary,
+            published_time,
+            updated_time,
+        }
+    }
+}

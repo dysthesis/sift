@@ -1,10 +1,12 @@
 use bytes::Bytes;
-use scraper::{Html, Selector};
-use tracing::warn;
+use serde_json::Value;
+use tracing::{info, warn};
 use url::Url;
+use webpage::HTML;
 
 use crate::{
     entry::Entry,
+    metadata::Metadata,
     parser::{Parser, ParserFamily},
 };
 
@@ -32,61 +34,76 @@ impl<'a> Parser<'a> for HtmlParser {
     }
 
     fn parse(&self) -> crate::entry::Entry {
+        info!("Parsing {} as HTML...", self.url);
+        let html = HTML::from_string(self.content.clone(), Some(self.url.to_string()))
+            .expect("HTML parsing should work");
+        let title = html.title.unwrap_or_default();
+        info!("Found title: {title}");
+        let summary = html.description;
+        info!("Found summary: {summary:?}");
         let url = self.url.clone();
-        let doc = Html::parse_document(self.content.as_str());
+        info!("Found url: {url}");
+        let content = html.text_content;
+        info!("Found content: {content}");
 
-        let selector_title = Selector::parse("title").unwrap();
-        let selector_og_title = Selector::parse(r#"meta[property="og:title"]"#).unwrap();
-        let selector_site = Selector::parse(r#"meta[property="og:site_name"]"#).unwrap();
-        let selector_author = Selector::parse(
-            r#"meta[name="author"],
-               meta[property="article:author"],
-               meta[name="byl"],
-               meta[name="dc.creator"],
-               meta[name="parsely-author"],
-               meta[name="twitter:creator"]"#,
-        )
-        .unwrap();
-
-        let title = doc
-            .select(&selector_og_title)
-            .next()
-            .and_then(|m| m.value().attr("content"))
-            .map(str::to_owned)
+        let author = html
+            .meta
+            .get("author")
+            .cloned()
+            .or_else(|| html.meta.get("article:author").cloned())
+            .or_else(|| html.meta.get("parsely-author").cloned())
+            .or_else(|| html.meta.get("dc.creator").cloned())
+            .or_else(|| html.meta.get("dcterms.creator").cloned())
             .or_else(|| {
-                warn!("Can't find og:title, falling back...");
-                doc.select(&selector_title)
-                    .next()
-                    .map(|n| n.text().collect::<String>().trim().to_owned())
+                html.meta
+                    .get("twitter:creator")
+                    .cloned()
+                    .map(|h| h.trim_start_matches('@').to_string())
             })
-            .unwrap_or_else(|| url.as_str().to_owned());
-
-        let origin = doc
-            .select(&selector_site)
-            .next()
-            .and_then(|m| m.value().attr("content"))
-            .map(str::to_owned)
             .or_else(|| {
-                warn!("Can't find origin title, falling back...");
-                url.host_str().map(|h| h.to_string())
+                html.schema_org
+                    .iter()
+                    .find_map(|s| author_from_schema(&s.value))
             })
             .unwrap_or_default();
+        info!("Found author: {author}");
 
-        let author = doc
-            .select(&selector_author)
-            .filter_map(|m| m.value().attr("content"))
-            .map(str::trim)
-            .find(|s| !s.is_empty())
-            .unwrap_or_else(|| {
-                warn!("Can't find author, falling back...");
-                ""
+        let origin = html
+            .opengraph
+            .properties
+            .get("site_name")
+            .cloned()
+            .or_else(|| html.meta.get("application-name").cloned())
+            .or_else(|| {
+                html.meta
+                    .get("twitter:site")
+                    .cloned()
+                    .map(|h| h.trim_start_matches('@').to_string())
             })
-            .to_owned();
+            .unwrap_or_else(|| self.url.domain().unwrap_or_default().to_string());
+        info!("Found site name: {origin}");
 
-        Entry::new(title, origin, author, url, self.content.clone(), None)
+        let metadata = Some(Metadata::new(summary, None, None));
+
+        Entry::new(title, origin, author, url, content, metadata)
     }
 }
 
 impl ParserFamily for HtmlParser {
     type For<'a> = HtmlParser;
+}
+
+fn author_from_schema(v: &Value) -> Option<String> {
+    let a = v.get("author")?;
+    match a {
+        Value::String(s) => Some(s.clone()),
+        Value::Object(m) => m.get("name").and_then(|n| n.as_str()).map(str::to_owned),
+        Value::Array(xs) => xs.iter().find_map(|x| {
+            x.get("name")
+                .and_then(|n| n.as_str())
+                .map(str::to_owned)
+                .or_else(|| x.as_str().map(str::to_owned))
+        }),
+        _ => None,
+    }
 }
